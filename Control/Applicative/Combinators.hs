@@ -66,6 +66,7 @@ module Control.Applicative.Combinators
   , eitherP
   , endBy
   , endBy1
+  , endByCount'
   , manyTill
   , manyTill_
   , someTill
@@ -73,8 +74,10 @@ module Control.Applicative.Combinators
   , option
   , sepBy
   , sepBy1
+  , sepByCount'
   , sepEndBy
   , sepEndBy1
+  , sepEndByCount'
   , skipMany
   , skipSome
   , skipCount
@@ -84,6 +87,7 @@ where
 
 import Control.Applicative
 import Control.Monad (replicateM, replicateM_)
+import Data.Bool (bool)
 import Data.Foldable
 
 ----------------------------------------------------------------------------
@@ -200,6 +204,18 @@ endBy1 :: Alternative m => m a -> m sep -> m [a]
 endBy1 p sep = some (p <* sep)
 {-# INLINE endBy1 #-}
 
+-- | @'endByCount'' m n p sep@ parses from @m@ to @n@ occurrences of @p@,
+-- separated and ended by @sep@. Returns a list of values returned by @p@.
+--
+-- Please note that @m@ /may/ be negative, in this case effect is the same
+-- as if it were equal to zero.
+--
+-- See also: 'count''.
+
+endByCount' :: Alternative m => Int -> Int -> m a -> m sep -> m [a]
+endByCount' m n p sep = count' m n (p <* sep)
+{-# INLINE endByCount' #-}
+
 -- | @'manyTill' p end@ applies parser @p@ /zero/ or more times until parser
 -- @end@ succeeds. Returns the list of values returned by @p@. @end@ result
 -- is consumed and lost. Use 'manyTill_' if you wish to keep it.
@@ -280,6 +296,20 @@ sepBy1 :: Alternative m => m a -> m sep -> m [a]
 sepBy1 p sep = liftA2 (:) p (many (sep *> p))
 {-# INLINE sepBy1 #-}
 
+-- | @'sepByCount'' m n p sep@ parses from @m@ to @n@ occurrences of @p@,
+-- separated by @sep@. Returns a list of values returned by @p@.
+--
+-- Please note that @m@ /may/ be negative, in this case effect is the same
+-- as if it were equal to zero.
+--
+-- See also: 'count''.
+
+sepByCount' :: Alternative m => Int -> Int -> m a -> m sep -> m [a]
+sepByCount' m n p sep
+  | n <= 0 || m > n = pure []
+  | otherwise       = bool (pure []) empty (m > 0) <|> (:) <$> p <*> count' (m - 1) (n - 1) (sep *> p)
+{-# INLINE sepByCount' #-}
+
 -- | @'sepEndBy' p sep@ parses /zero/ or more occurrences of @p@, separated
 -- and optionally ended by @sep@. Returns a list of values returned by @p@.
 
@@ -293,6 +323,24 @@ sepEndBy p sep = sepEndBy1 p sep <|> pure []
 sepEndBy1 :: Alternative m => m a -> m sep -> m [a]
 sepEndBy1 p sep = liftA2 (:) p ((sep *> sepEndBy p sep) <|> pure [])
 {-# INLINEABLE sepEndBy1 #-}
+
+-- | @'sepEndByCount'' m n p sep@ parses from @m@ to @n@ occurrences of @p@,
+-- separated and optionally ended by @sep@. Returns a list of values
+-- returned by @p@.
+--
+-- Please note that @m@ /may/ be negative, in this case effect is the same
+-- as if it were equal to zero.
+--
+-- See also: 'count''.
+
+sepEndByCount' :: Alternative m => Int -> Int -> m a -> m sep -> m [a]
+sepEndByCount' m' n' p sep = go m' n'
+  where
+    go !m !n
+      | n <= 0 || m > n = pure []
+      | m > 0           = (:) <$> p <* sep <*> go (m - 1) (n - 1)
+      | otherwise       = (:) <$> p <* sep <*> go 0 (n - 1) <|> pure []
+{-# INLINE sepEndByCount' #-}
 
 -- | @'skipMany' p@ applies the parser @p@ /zero/ or more times, skipping
 -- its result.
